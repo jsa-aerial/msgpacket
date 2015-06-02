@@ -3,7 +3,7 @@
 
 
 (defprotocol msgPacket
-  " All client server (or pier to pier as well) communication involves
+  " All client server (or peer to peer as well) communication involves
     three different protocols:
 
     * The line data protocol - the encoding and decoding of all
