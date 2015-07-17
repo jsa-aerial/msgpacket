@@ -39,6 +39,9 @@
 
    Close
    [ 6  , null , streamId ]
+
+   Error
+   [ 7  , ErrorInfo , streamId ]
   "
   [x]
   (or (and (map? x)
@@ -91,7 +94,8 @@
       :pause 3, 3 :pause
       :resume 4, 4 :resume
       :end 5, 5 :end
-      :close 6, 6 :close})
+      :close 6, 6 :close
+      :error 7, 7 :error})
 
 (defn- pack
   ""
@@ -194,18 +198,25 @@
                 :pause pause, :onPause onPause
                 :resume resume, :onResume onResume
                 :onClose onClose, :onEnd onEnd
-                :end end, :onData (fn[_]), :write write}
+                :end end, :onData (fn[_]),
+                :onError (fn[_]), :write write}
         stream (assoc stream :on
                  (fn[ev f]
                    (setstream
                     streamid
                     (assoc (getstream streamid)
-                      ev (if (= ev :onData) f (fn[](stream ev)(f)))))))]
+                      ev (if (some #{ev} [:onError :onData])
+                           f
+                           (fn[](stream ev)(f)))))))]
 
     (setstream streamid stream)
     (when srvstrm (write [:new meta streamid]))
     stream))
 
+
+(let [next (atom 0)]
+  (defn next-clientid []
+    (swap! next inc)))
 
 (defn new-client [id recv-chan packer http-send]
   ;; Clients can have any number of streams; by binaryjs convention,
@@ -265,7 +276,7 @@
              cchan {:id :stream :msg [:stream [nbs meta]]
                     :client (@clients client-id) :msgmap msgmap}))
 
-          (:data :pause :resume :end :close)
+          (:data :error :pause :resume :end :close)
           (let [stream (@(get-in @clients [client-id :streams]) streamid)]
             (if-not stream
               (msg->recv-chan!
@@ -275,6 +286,7 @@
                 :client (@clients client-id)})
               (case evid
                 :data (-> stream :onData (#(% payload)))
+                :error (-> stream :onError (#(% payload)))
                 :pause (-> stream :onPause (#(%)))
                 :resume (-> stream :onResume (#(%)))
                 :end (-> stream :onEnd (#(%)))
@@ -368,7 +380,7 @@
   (connect-request [_ req]
     (if (= (:type req) :ajax)
       (ajax-connect packer req)
-      (ws-connect packer req clients (count @clients))))
+      (ws-connect packer req clients (next-clientid))))
 
   (enclose_ [_ data] (enclose- packer data))
 
